@@ -288,7 +288,7 @@ export const appRouter = router({
       .input(
         z.object({
           userId: z.number(),
-          role: z.enum(["user", "admin"]),
+          role: z.enum(["user", "analyst", "admin"]),
         })
       )
       .mutation(async ({ ctx, input }) => {

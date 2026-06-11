@@ -1,10 +1,15 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
 export const ENV = {
-  appId: process.env.VITE_APP_ID ?? "",
-  cookieSecret: process.env.JWT_SECRET ?? "",
-  databaseUrl: process.env.DATABASE_URL ?? "",
-  oAuthServerUrl: process.env.OAUTH_SERVER_URL ?? "",
-  ownerOpenId: process.env.OWNER_OPEN_ID ?? "",
-  isProduction: process.env.NODE_ENV === "production",
-  forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
-  forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
+  databaseUrl: process.env.DATABASE_URL || '',
+  jwtSecret: process.env.JWT_SECRET || 'config-validator-secret-default-123',
+  
+  // Modificado com fallbacks para evitar o erro de "Invalid URL" no Render
+  oauthServerUrl: process.env.OAUTH_SERVER_URL || 'https://validacao-de-configuracao.onrender.com',
+  viteAppId: process.env.VITE_APP_ID || 'dummy-id',
+  viteOauthPortalUrl: process.env.VITE_OAUTH_PORTAL_URL || 'https://validacao-de-configuracao.onrender.com',
+  
+  ownerOpenId: process.env.OWNER_OPEN_ID || '',
+  ownerName: process.env.OWNER_NAME || 'Owner',
 };

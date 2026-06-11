@@ -45,7 +45,7 @@ export async function createUser(data: {
   email: string;
   name: string;
   passwordHash: string;
-  role?: "user" | "admin";
+  role?: "user" | "analyst" | "admin"; // <-- Adicione "analyst" aqui
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -63,10 +63,10 @@ export async function createUser(data: {
 
 export async function updateUser(id: number, data: {
   name?: string;
-  role?: "user" | "admin";
+  role?: "user" | "analyst" | "admin"; // <-- Adicione "analyst" aqui
   isActive?: number;
   passwordHash?: string;
-}) {
+}){
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
