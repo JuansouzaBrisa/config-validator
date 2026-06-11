@@ -1,15 +1,24 @@
 import { eq } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users, submissions, devices, reviewItems } from "../drizzle/schema";
+import { drizzle } from "drizzle-orm/libsql";
+import { createClient } from "@libsql/client";
+import { users, submissions, devices, reviewItems } from "../drizzle/schema";
+import fs from "fs";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
 export async function getDb() {
-  if (!_db && process.env.DATABASE_URL) {
+  if (!_db) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      // Garante que a pasta /data exista no servidor do Railway
+      if (!fs.existsSync("/data")) {
+        fs.mkdirSync("/data", { recursive: true });
+      }
+      // Conecta no arquivo SQLite local protegido pelo Volume do Railway
+      const client = createClient({ url: "file:/data/sqlite.db" });
+      _db = drizzle(client);
+      console.log("[Database] Conectado com sucesso ao SQLite no Railway (/data/sqlite.db)");
     } catch (error) {
-      console.warn("[Database] Failed to connect:", error);
+      console.warn("[Database] Falha ao inicializar o SQLite:", error);
       _db = null;
     }
   }
@@ -21,10 +30,7 @@ export async function getDb() {
  */
 export async function getUserByEmail(email: string) {
   const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot get user: database not available");
-    return undefined;
-  }
+  if (!db) return undefined;
 
   const result = await db.select().from(users).where(eq(users.email, email)).limit(1);
   return result.length > 0 ? result[0] : undefined;
@@ -32,10 +38,7 @@ export async function getUserByEmail(email: string) {
 
 export async function getUserById(id: number) {
   const db = await getDb();
-  if (!db) {
-    console.warn("[Database] Cannot get user: database not available");
-    return undefined;
-  }
+  if (!db) return undefined;
 
   const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
   return result.length > 0 ? result[0] : undefined;
@@ -45,7 +48,7 @@ export async function createUser(data: {
   email: string;
   name: string;
   passwordHash: string;
-  role?: "user" | "analyst" | "admin"; // <-- Adicione "analyst" aqui
+  role?: "user" | "analyst" | "admin";
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -57,13 +60,16 @@ export async function createUser(data: {
     role: data.role || "user",
     loginMethod: "internal",
     isActive: 1,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
   });
-  return { insertId: (result as any).insertId };
+  
+  return { insertId: Number(result.lastInsertRowid) };
 }
 
 export async function updateUser(id: number, data: {
   name?: string;
-  role?: "user" | "analyst" | "admin"; // <-- Adicione "analyst" aqui
+  role?: "user" | "analyst" | "admin";
   isActive?: number;
   passwordHash?: string;
 }){
@@ -72,7 +78,7 @@ export async function updateUser(id: number, data: {
 
   await db.update(users).set({
     ...data,
-    updatedAt: new Date(),
+    updatedAt: new Date().toISOString(),
   }).where(eq(users.id, id));
 }
 
@@ -87,7 +93,14 @@ export async function deactivateUser(id: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  await db.update(users).set({ isActive: 0, updatedAt: new Date() }).where(eq(users.id, id));
+  await db.update(users).set({ isActive: 0, updatedAt: new Date().toISOString() }).where(eq(users.id, id));
+}
+
+export async function activateUser(id: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  await db.update(users).set({ isActive: 1, updatedAt: new Date().toISOString() }).where(eq(users.id, id));
 }
 
 /**
@@ -102,8 +115,13 @@ export async function createSubmission(data: {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const result = await db.insert(submissions).values(data);
-  return { insertId: (result as any).insertId };
+  const result = await db.insert(submissions).values({
+    ...data,
+    status: "Pendente",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  });
+  return { insertId: Number(result.lastInsertRowid) };
 }
 
 export async function getSubmissionById(id: number) {
@@ -120,7 +138,7 @@ export async function getSubmissionsByUser(userId: number, role: string) {
 
   if (role === "user") {
     return await db.select().from(submissions).where(eq(submissions.createdByUserId, userId));
-  } else if (role === "admin") {
+  } else if (role === "admin" || role === "analyst") { // Incluído o 'analyst' para listar chamados
     return await db.select().from(submissions);
   }
   return [];
@@ -130,7 +148,7 @@ export async function updateSubmissionStatus(id: number, status: "Pendente" | "E
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  await db.update(submissions).set({ status, updatedAt: new Date() }).where(eq(submissions.id, id));
+  await db.update(submissions).set({ status, updatedAt: new Date().toISOString() }).where(eq(submissions.id, id));
 }
 
 /**
@@ -145,7 +163,7 @@ export async function createDevice(data: {
   if (!db) throw new Error("Database not available");
 
   const result = await db.insert(devices).values(data);
-  return { insertId: (result as any).insertId };
+  return { insertId: Number(result.lastInsertRowid) };
 }
 
 export async function getDevicesBySubmission(submissionId: number) {
@@ -166,8 +184,11 @@ export async function createReviewItem(data: {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  const result = await db.insert(reviewItems).values(data);
-  return { insertId: (result as any).insertId };
+  const result = await db.insert(reviewItems).values({
+    ...data,
+    reviewStatus: "Pendente" as any // Garante status inicial neutro/pendente
+  });
+  return { insertId: Number(result.lastInsertRowid) };
 }
 
 export async function getReviewItemsByDevice(deviceId: number) {
@@ -187,13 +208,6 @@ export async function updateReviewItem(id: number, data: {
 
   await db.update(reviewItems).set({
     ...data,
-    reviewedAt: new Date(),
+    reviewedAt: new Date().toISOString(),
   }).where(eq(reviewItems.id, id));
-}
-
-export async function activateUser(id: number) {
-  const db = await getDb();
-  if (!db) throw new Error("Database not available");
-
-  await db.update(users).set({ isActive: 1, updatedAt: new Date() }).where(eq(users.id, id));
 }
