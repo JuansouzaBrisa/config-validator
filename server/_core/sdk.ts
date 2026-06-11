@@ -277,20 +277,19 @@ class SDKServer {
 
     const sessionUserId = session.openId;
     const signedInAt = new Date();
-    let user = await db.getUserByOpenId(sessionUserId);
+    let user = await db.getUserByEmail(sessionUserId);
 
     // If user not in DB, sync from OAuth server automatically
     if (!user) {
       try {
         const userInfo = await this.getUserInfoWithJwt(sessionCookie ?? "");
-        await db.upsertUser({
-          openId: userInfo.openId,
+        await db.createUser({
+          email: userInfo.openId,
           name: userInfo.name || null,
-          email: userInfo.email ?? null,
-          loginMethod: userInfo.loginMethod ?? userInfo.platform ?? null,
+          passwordHash: "",
           lastSignedIn: signedInAt,
         });
-        user = await db.getUserByOpenId(userInfo.openId);
+        user = await db.getUserByEmail(userInfo.openId);
       } catch (error) {
         console.error("[Auth] Failed to sync user from OAuth:", error);
         throw ForbiddenError("Failed to sync user info");
@@ -301,8 +300,7 @@ class SDKServer {
       throw ForbiddenError("User not found");
     }
 
-    await db.upsertUser({
-      openId: user.openId,
+    await db.updateUser(user.id, {
       lastSignedIn: signedInAt,
     });
 
@@ -324,11 +322,11 @@ function buildCronUser(
   const now = new Date();
   return {
     id: -1,
-    openId: userInfo.openId,
+    email: userInfo.openId,
     name: userInfo.name || "Manus Scheduled Task",
-    email: null,
-    loginMethod: null,
+    passwordHash: "",
     role: "user",
+    isActive: true,
     createdAt: now,
     updatedAt: now,
     lastSignedIn: now,
