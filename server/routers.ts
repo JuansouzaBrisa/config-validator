@@ -1,10 +1,11 @@
+import { z } from "zod";
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, router } from "./_core/trpc";
+import { publicProcedure, router, protectedProcedure } from "./_core/trpc";
+import * as db from "./db";
 
 export const appRouter = router({
-    // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
   system: systemRouter,
   auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
@@ -17,12 +18,49 @@ export const appRouter = router({
     }),
   }),
 
-  // TODO: add feature routers here, e.g.
-  // todo: router({
-  //   list: protectedProcedure.query(({ ctx }) =>
-  //     db.getUserTodos(ctx.user.id)
-  //   ),
-  // }),
+  submissions: router({
+    create: protectedProcedure
+      .input(z.object({
+        title: z.string().min(1),
+        ticketLink: z.string().url(),
+        deviceName: z.string().min(1),
+        configCode: z.string().min(1),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        const submissionId = await db.createSubmissionWithItems({
+          userId: ctx.user.id,
+          ...input,
+        });
+        return { id: submissionId };
+      }),
+
+    getDetails: publicProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        const details = await db.getSubmissionDetails(input.id);
+        if (!details) throw new Error("Submission not found");
+        return details;
+      }),
+
+    updateLineStatus: protectedProcedure
+      .input(z.object({
+        itemId: z.number(),
+        status: z.enum(["Correto", "Erro", "Desnecessário"]),
+        comment: z.string().optional(),
+      }))
+      .mutation(async ({ input, ctx }) => {
+        // Regra de negócio: comentário obrigatório para Erro ou Desnecessário
+        if ((input.status === "Erro" || input.status === "Desnecessário") && !input.comment) {
+          throw new Error("Comentário é obrigatório para status de Erro ou Desnecessário");
+        }
+
+        await db.updateLineStatus({
+          ...input,
+          reviewerId: ctx.user.id,
+        });
+        return { success: true };
+      }),
+  }),
 });
 
 export type AppRouter = typeof appRouter;
